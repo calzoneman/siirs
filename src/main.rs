@@ -1,6 +1,6 @@
 use std::{fs::File, io::Read};
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use compress::zlib;
 
 mod crypt;
@@ -19,18 +19,16 @@ fn main() -> Result<()> {
     loop {
         match sii_reader.next_block() {
             Ok(None) => break,
-            Ok(Some(b)) => {
-                match b {
-                    sii::Block::Struct(s) => {
-                        println!("{:X} {}", s.id, s.name);
-                    },
-                    sii::Block::Data(d) => {
-                        dbg!(&d);
-                    }
-                    _ => {}
+            Ok(Some(b)) => match b {
+                sii::Block::Struct(s) => {
+                    println!("{:X} {}", s.id, s.name);
                 }
+                sii::Block::Data(d) => {
+                    dbg!(&d);
+                }
+                _ => {}
             },
-            Err(e) => bail!("shit: {e}")
+            Err(e) => bail!("shit: {e}"),
         }
     }
 
