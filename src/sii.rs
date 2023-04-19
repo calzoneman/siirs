@@ -191,47 +191,245 @@ impl std::fmt::Debug for ID {
     }
 }
 
+macro_rules! def_vec {
+    ($vname:ident, $iname:ident, $($itype:ty),+) => {
+        pub type $vname = ($($itype),+);
+    };
+}
+
 #[derive(Debug)]
 pub enum Value {
     // 0x01
     String(String),
     // 0x02
     StringArray(Vec<String>),
+    // 0x03
+    EncodedString(u64),
+    // 0x04
+    EncodedStringArray(Vec<u64>),
     // 0x05
     Single(f32),
+    // 0x06
+    SingleArray(Vec<f32>),
     // 0x07
-    Vec2s(f32, f32),
+    Vec2s(Vec2s),
+    // 0x09
+    Vec3s(Vec3s),
+    // 0x0A
+    Vec3sArray(Vec<Vec3s>),
+    // 0x11
+    Vec3i(Vec3i),
+    // 0x12
+    Vec3iArray(Vec<Vec3i>),
+    // 0x17
+    Vec4s(Vec4s),
+    // 0x18
+    Vec4sArray(Vec<Vec4s>),
+    // 0x19
+    Vec8s(Vec8s),
+    // 0x1A
+    Vec8sArray(Vec<Vec8s>),
+    // 0x25
+    Int32(i32),
+    // 0x26
+    Int32Array(Vec<i32>),
     // 0x27
     UInt32(u32),
     // 0x28
     UInt32Array(Vec<u32>),
+    // 0x2B
+    UInt16(u16),
+    // 0x2C
+    UInt16Array(Vec<u16>),
+    // 0x31
+    Int64(i64),
+    Int64Array(Vec<i64>),
     // 0x33
     UInt64(u64),
+    UInt64Array(Vec<u64>),
     // 0x35
     ByteBool(bool),
+    // 0x36
+    ByteBoolArray(Vec<bool>),
+    // 0x37
+    OrdinalString(String),
     // 0x39
     ID(ID),
     // 0x3A
     IDArray(Vec<ID>),
 }
 
+macro_rules! def_array {
+    ($aname:ident, $iname:ident, $itype:ty) => {
+        pub fn $aname<R: Read>(reader: &mut R) -> Result<Vec<$itype>> {
+            let len = reader.read_u32::<LittleEndian>()?;
+
+            let mut vals = Vec::with_capacity(len as usize);
+            for _ in 0..len {
+                vals.push(Self::$iname(reader)?);
+            }
+
+            Ok(vals)
+        }
+    };
+}
+
+// macro_rules! match_read {
+//     {$r:expr, $v:expr, [$(($num:literal, $vtype:ident, $rname:ident)),+]} => {
+//         match $v {
+//             $($num => Ok(Value::$vtype(Self::$rname($r)?)),)+
+//             _ => Err(anyhow!("unknown value type {0:X}", $v)),
+//         }
+//     };
+// }
+
+macro_rules! match_read {
+    {$r:expr, $v:expr, [$(($num:literal, $vtype:ident, $itype:ty)),+]} => {
+        match $v {
+            $($num => Ok(Value::$vtype(<$itype>::read_from($r)?)),)+
+            _ => Err(anyhow!("unknown value type {0:X}", $v)),
+        }
+    };
+}
+
+trait ReadFrom
+where Self: Sized {
+    fn read_from<R: Read>(reader: &mut R) -> Result<Self>;
+}
+
+macro_rules! read_from {
+    ($t:ty, $r:ident, $($expr:tt)*) => {
+        impl ReadFrom for $t {
+            fn read_from<R: Read>($r: &mut R) -> Result<Self> {
+                $($expr)*
+            }
+        }
+    };
+}
+
+read_from!(u16, reader, Ok(reader.read_u16::<LittleEndian>()?));
+read_from!(i32, reader, Ok(reader.read_i32::<LittleEndian>()?));
+read_from!(u32, reader, Ok(reader.read_u32::<LittleEndian>()?));
+read_from!(u64, reader, Ok(reader.read_u64::<LittleEndian>()?));
+read_from!(i64, reader, Ok(reader.read_i64::<LittleEndian>()?));
+read_from!(f32, reader, Ok(reader.read_f32::<LittleEndian>()?));
+
+macro_rules! def_vec {
+    ($name:ident, $($t:ty),+) => {
+        pub type $name = ($($t),+);
+
+        impl ReadFrom for $name {
+            fn read_from<R: Read>(reader: &mut R) -> Result<Self> {
+                Ok((
+                    $(<$t>::read_from(reader)?),+
+                ))
+            }
+        }
+    };
+}
+
+def_vec!(Vec2s, f32, f32);
+def_vec!(Vec3s, f32, f32, f32);
+def_vec!(Vec4s, f32, f32, f32, f32);
+def_vec!(Vec8s, f32, f32, f32, f32, f32, f32, f32, f32);
+def_vec!(Vec3i, i32, i32, i32);
+
+impl<T> ReadFrom for Vec<T>
+where T: ReadFrom {
+    fn read_from<R: Read>(reader: &mut R) -> Result<Self> {
+            let len = reader.read_u32::<LittleEndian>()?;
+
+            let mut vals = Vec::with_capacity(len as usize);
+            for _ in 0..len {
+                vals.push(T::read_from(reader)?);
+            }
+
+            Ok(vals)
+    }
+}
+
+impl ReadFrom for ID {
+    fn read_from<R: Read>(reader: &mut R) -> Result<Self> {
+        let len = reader.read_u8()?;
+
+        if len == 0xFF {
+            Ok(ID::Nameless(u64::read_from(reader)?))
+        } else {
+            let mut parts = Vec::with_capacity(len as usize);
+            for _ in 0..len {
+                parts.push(u64::read_from(reader)?);
+            }
+
+            Ok(ID::Named(parts))
+        }
+    }
+}
+
+impl ReadFrom for String {
+    fn read_from<R: Read>(reader: &mut R) -> Result<Self> {
+        let len = u32::read_from(reader)?;
+        let mut out = Vec::new();
+        out.resize(len as usize, 0u8);
+        reader.read_exact(&mut out)?;
+
+        String::from_utf8(out).map_err(|e| anyhow!("invalid string: {e}"))
+    }
+}
+
+impl ReadFrom for bool {
+    fn read_from<R: Read>(reader: &mut R) -> Result<Self> {
+        if reader.read_u8()? == 0 {
+            Ok(false)
+        } else {
+            Ok(true)
+        }
+    }
+}
+
 impl Value {
     pub fn read<R: Read>(reader: &mut R, field: &StructFieldDef) -> Result<Self> {
-        match field.value_type {
-            0x01 => Ok(Value::String(Self::read_string(reader)?)),
-            0x02 => Ok(Value::StringArray(Self::read_string_array(reader)?)),
-            0x05 => Ok(Value::Single(Self::read_single(reader)?)),
-            0x07 => {
-                let (first, second) = Self::read_vec2s(reader)?;
-                Ok(Value::Vec2s(first, second))
-            }
-            0x27 => Ok(Value::UInt32(Self::read_uint32(reader)?)),
-            0x28 => Ok(Value::UInt32Array(Self::read_uint32_array(reader)?)),
-            0x33 => Ok(Value::UInt64(Self::read_uint64(reader)?)),
-            0x35 => Ok(Value::ByteBool(Self::read_bytebool(reader)?)),
-            0x39 => Ok(Value::ID(Self::read_id(reader)?)),
-            0x3A => Self::read_id_array(reader),
-            _ => Err(anyhow!("unknown value type {0:X}", field.value_type)),
+        if field.value_type == 0x37 {
+            return Self::read_ordinal_string(reader, field);
+        }
+
+        match_read! {
+            reader,
+            field.value_type,
+            [
+                (0x01, String, String),
+                (0x02, StringArray, Vec<String>),
+                (0x03, EncodedString, u64),
+                (0x04, EncodedStringArray, Vec<u64>),
+                (0x05, Single, f32),
+                (0x06, SingleArray, Vec<f32>),
+                (0x07, Vec2s, Vec2s),
+                (0x09, Vec3s, Vec3s),
+                (0x0A, Vec3sArray, Vec<Vec3s>),
+                (0x11, Vec3i, Vec3i),
+                (0x12, Vec3iArray, Vec<Vec3i>),
+                (0x17, Vec4s, Vec4s),
+                (0x18, Vec4sArray, Vec<Vec4s>),
+                (0x19, Vec8s, Vec8s),
+                (0x1A, Vec8sArray, Vec<Vec8s>),
+                (0x25, Int32, i32),
+                (0x26, Int32Array, Vec<i32>),
+                (0x27, UInt32, u32),
+                (0x28, UInt32Array, Vec<u32>),
+                (0x2B, UInt16, u16),
+                (0x2C, UInt16Array, Vec<u16>),
+                (0x2F, UInt32, u32), // Maybe
+                (0x31, Int64, i64),
+                (0x32, Int64Array, Vec<i64>), // Maybe
+                (0x33, UInt64, u64),
+                (0x34, UInt64Array, Vec<u64>),
+                (0x35, ByteBool, bool),
+                (0x36, ByteBoolArray, Vec<bool>),
+                (0x39, ID, ID),
+                (0x3A, IDArray, Vec<ID>),
+                (0x3B, ID, ID),
+                (0x3C, IDArray, Vec<ID>),
+                (0x3D, ID, ID)
+            ]
         }
     }
 
@@ -250,16 +448,7 @@ impl Value {
         }
     }
 
-    fn read_id_array<R: Read>(reader: &mut R) -> Result<Self> {
-        let len = reader.read_u32::<LittleEndian>()?;
-
-        let mut ids = Vec::with_capacity(len as usize);
-        for _ in 0..len {
-            ids.push(Self::read_id(reader)?);
-        }
-
-        Ok(Value::IDArray(ids))
-    }
+    def_array!(read_id_array, read_id, ID);
 
     pub fn read_string<R: Read>(reader: &mut R) -> Result<String> {
         let len = reader.read_u32::<LittleEndian>()?;
@@ -270,49 +459,58 @@ impl Value {
         String::from_utf8(out).map_err(|e| anyhow!("invalid string: {e}"))
     }
 
-    pub fn read_string_array<R: Read>(reader: &mut R) -> Result<Vec<String>> {
-        let len = reader.read_u32::<LittleEndian>()?;
-
-        let mut strs = Vec::with_capacity(len as usize);
-        for _ in 0..len {
-            strs.push(Self::read_string(reader)?);
-        }
-
-        Ok(strs)
-    }
+    def_array!(read_string_array, read_string, String);
 
     pub fn read_uint32<R: Read>(reader: &mut R) -> Result<u32> {
         Ok(reader.read_u32::<LittleEndian>()?)
     }
 
-    pub fn read_uint32_array<R: Read>(reader: &mut R) -> Result<Vec<u32>> {
-        let len = reader.read_u32::<LittleEndian>()?;
-
-        let mut ints = Vec::with_capacity(len as usize);
-        for _ in 0..len {
-            ints.push(Self::read_uint32(reader)?);
-        }
-
-        Ok(ints)
-    }
+    def_array!(read_uint32_array, read_uint32, u32);
 
     pub fn read_uint64<R: Read>(reader: &mut R) -> Result<u64> {
         Ok(reader.read_u64::<LittleEndian>()?)
     }
 
+    def_array!(read_uint64_array, read_uint64, u64);
+
     pub fn read_single<R: Read>(reader: &mut R) -> Result<f32> {
         Ok(reader.read_f32::<LittleEndian>()?)
     }
 
-    pub fn read_vec2s<R: Read>(reader: &mut R) -> Result<(f32, f32)> {
+    def_array!(read_single_array, read_single, f32);
+
+    pub fn read_vec2s<R: Read>(reader: &mut R) -> Result<Vec2s> {
         Ok((Self::read_single(reader)?, Self::read_single(reader)?))
     }
+
+    pub fn read_vec3s<R: Read>(reader: &mut R) -> Result<Vec3s> {
+        Ok((Self::read_single(reader)?, Self::read_single(reader)?, Self::read_single(reader)?))
+    }
+
+    def_array!(read_vec3s_array, read_vec3s, Vec3s);
 
     pub fn read_bytebool<R: Read>(reader: &mut R) -> Result<bool> {
         if reader.read_u8()? == 0 {
             Ok(false)
         } else {
             Ok(true)
+        }
+    }
+
+    def_array!(read_bytebool_array, read_bytebool, bool);
+
+    fn read_ordinal_string<R: Read>(reader: &mut R, field: &StructFieldDef) -> Result<Value> {
+        let ordinal = u32::read_from(reader)?;
+
+        match field.ordinal_table {
+            Some(ref t) => {
+                let s = t.get(&ordinal).ok_or_else(|| anyhow!("missing ordinal table entry for {ordinal}"))?;
+
+                Ok(Value::OrdinalString(s.clone()))
+            }
+            None => {
+                bail!("missing ordinal table for {0}", field.name)
+            }
         }
     }
 }
