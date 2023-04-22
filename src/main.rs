@@ -1,30 +1,32 @@
-use std::{fs::File, io::Read};
+use std::fs::File;
 
 use anyhow::{bail, Result};
 use compress::zlib;
+use sii::{crypt::Decryptor, parser::Parser};
 
-mod crypt;
 mod sii;
 
 fn main() -> Result<()> {
-    let mut enc_file = File::open("/home/calvin/programming/siistuff/game.sii")?;
-    let mut enc_bytes = Vec::default();
-    enc_file.read_to_end(&mut enc_bytes)?;
+    let enc_file = File::open("/home/calvin/programming/siistuff/game.sii")?;
+    let decrypted = Decryptor::new(enc_file).decrypt()?;
+    let zread = zlib::Decoder::new(decrypted.as_slice());
+    let mut parser = Parser::new(zread)?;
 
-    let decrypted = crypt::decrypt_sii(&enc_bytes)?;
-    let mut decoder = zlib::Decoder::new(decrypted.as_slice());
-    //let mut decoded = Vec::default();
-    //decoder.read_to_end(&mut decoded)?;
-    let mut sii_reader = sii::Reader::new(decoder)?;
     loop {
-        match sii_reader.next_block() {
+        match parser.next_block() {
             Ok(None) => break,
             Ok(Some(b)) => match b {
-                sii::Block::Struct(s) => {
-                    println!("{:X} {}", s.id, s.name);
+                sii::parser::Block::Struct(s) => {
+                    // println!("{:X} {}", s.id, s.name);
+                    // for f in s.fields {
+                    // println!("  - {:X} {}", f.value_type, f.name);
+                    // }
                 }
-                sii::Block::Data(d) => {
-                    dbg!(&d);
+                sii::parser::Block::Data(d) => {
+                    if d.struct_name == "mail_def" {
+                        dbg!(&d);
+                    }
+                    // dbg!(&d);
                 }
                 _ => {}
             },
