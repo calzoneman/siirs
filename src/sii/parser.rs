@@ -25,6 +25,17 @@ pub struct DataBlock {
     pub fields: HashMap<String, Value>,
 }
 
+#[macro_export]
+macro_rules! data_get {
+    ($b:ident, $fname:literal, $variant:ident) => {
+        match $b.fields.get($fname) {
+            None => Err(anyhow::anyhow!("missing field {}", $fname)),
+            Some(crate::sii::value::Value::$variant(v)) => Ok(v),
+            Some(_) => Err(anyhow::anyhow!("mismatched type for {}", $fname)),
+        }
+    };
+}
+
 pub enum Block {
     Struct(StructDef),
     Data(DataBlock),

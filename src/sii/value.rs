@@ -71,7 +71,7 @@ impl ReadFrom for OrdinalStringTable {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub enum ID {
     Nameless(u64),
     Named(Vec<u64>),
