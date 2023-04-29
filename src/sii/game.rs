@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    io::Read,
-};
+use std::{collections::HashMap, io::Read};
 
 use crate::data_get;
 use anyhow::{anyhow, Result};
@@ -73,7 +70,10 @@ impl GameSave {
         Ok(Self { blocks: objects })
     }
 
-    #[allow(dead_code)]
+    pub fn get_block_by_id(&self, id: &ID) -> Option<&DataBlock> {
+        self.blocks.get(id)
+    }
+
     pub fn iter_blocks_named<'a>(
         &'a self,
         name: &'a str,
@@ -83,6 +83,10 @@ impl GameSave {
                 .iter()
                 .filter(move |(_, s)| s.struct_name == name),
         )
+    }
+
+    pub fn iter_blocks<'a>(&'a self) -> Box<dyn Iterator<Item = (&ID, &DataBlock)> + 'a> {
+        Box::new(self.blocks.iter())
     }
 
     pub fn single_block_named(&self, name: &str) -> Option<&DataBlock> {

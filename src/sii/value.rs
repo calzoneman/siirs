@@ -77,6 +77,22 @@ pub enum ID {
     Named(Vec<u64>),
 }
 
+impl ID {
+    pub fn string_part(&self, index: isize) -> Option<String> {
+        match self {
+            Self::Named(parts) => {
+                let idx = if index < 0 {
+                    (parts.len() as isize + index) as usize
+                } else {
+                    index as usize
+                };
+                parts.get(idx).map(|p| EncodedString(*p).to_string())
+            }
+            Self::Nameless(_) => None,
+        }
+    }
+}
+
 impl ToString for ID {
     fn to_string(&self) -> String {
         match self {
