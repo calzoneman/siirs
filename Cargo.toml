@@ -11,3 +11,4 @@ anyhow = "1.0.70"
 byteorder = "1.4.3"
 cbc = "0.1.2"
 compress = {version = "0.2.1", features = ["zlib"]}
+rusqlite = "0.29.0"

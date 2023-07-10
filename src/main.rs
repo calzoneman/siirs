@@ -5,10 +5,12 @@ use compress::zlib;
 use sii::{
     crypt::Decryptor,
     game::{FromGameSave, GameSave, SaveSummary},
+    parser::Parser,
 };
 
 mod prospective_cities;
 mod sii;
+mod sqlite;
 
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
@@ -26,6 +28,13 @@ fn main() -> Result<()> {
         "summary" => {
             let summary = SaveSummary::from_game_save(&save)?;
             println!("{:?}", summary);
+        }
+        "to-sqlite" => {
+            let enc_file = File::open(fname)?;
+            let decrypted = Decryptor::new(enc_file).decrypt()?;
+            let zread = zlib::Decoder::new(decrypted.as_slice());
+            let parser = Parser::new(zread)?;
+            sqlite::copy_to_sqlite(parser, args[3].as_str())?;
         }
         "prospective-cities" => {
             prospective_cities::find_profitable_cities(&save)?;
