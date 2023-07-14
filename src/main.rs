@@ -8,6 +8,7 @@ use sii::{
     parser::Parser,
 };
 
+mod achievements;
 mod achivements;
 mod prospective_cities;
 mod sii;

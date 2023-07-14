@@ -114,6 +114,35 @@ impl ToString for ID {
     }
 }
 
+impl TryFrom<&str> for ID {
+    type Error = anyhow::Error;
+
+    fn try_from(idstr: &str) -> Result<Self> {
+        if idstr.starts_with("_nameless") {
+            bail!("parsing nameless IDs is not supported yet");
+        }
+
+        let pieces = idstr
+            .split(".")
+            .map(|p| EncodedString::try_from(p).map(|e| e.0))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        if pieces.is_empty() {
+            bail!("cannot parse empty ID '{}'", idstr);
+        }
+
+        Ok(ID::Named(pieces))
+    }
+}
+
+impl TryFrom<String> for ID {
+    type Error = anyhow::Error;
+
+    fn try_from(idstr: String) -> Result<Self> {
+        Self::try_from(idstr.as_str())
+    }
+}
+
 impl Debug for ID {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -165,6 +194,36 @@ impl ToString for EncodedString {
         }
 
         res
+    }
+}
+
+impl TryFrom<&str> for EncodedString {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &str) -> Result<Self> {
+        if value.len() > 12 {
+            bail!("string too long to encode as u64: '{}'", value);
+        }
+
+        let mut out: u64 = 0;
+        for c in value.as_bytes().iter().rev() {
+            let idx = Self::CHARTABLE
+                .binary_search_by(|it| it.to_ascii_uppercase().cmp(&c.to_ascii_uppercase()))
+                .map_err(|_| anyhow!("unexpected '{c}' in encoded string"))?;
+
+            out *= 38;
+            out += (idx as u64) + 1;
+        }
+
+        Ok(Self(out))
+    }
+}
+
+impl TryFrom<String> for EncodedString {
+    type Error = anyhow::Error;
+
+    fn try_from(value: String) -> Result<Self> {
+        Self::try_from(value.as_str())
     }
 }
 
@@ -311,5 +370,60 @@ impl Value {
                 bail!("missing ordinal table")
             }
         }
+    }
+}
+
+macro_rules! homogeneous_array {
+    ($values:expr, $t:ident, $arrt:ident) => {{
+        let mut out = Vec::new();
+        for v in $values {
+            match v {
+                Value::$t(x) => out.push(x),
+                other => bail!(
+                    "cannot mix types in array, expected {} but found {:?}",
+                    stringify!($t),
+                    other
+                ),
+            }
+        }
+
+        Ok(Value::$arrt(out))
+    }};
+}
+
+impl TryFrom<Vec<Value>> for Value {
+    type Error = anyhow::Error;
+
+    fn try_from(values: Vec<Value>) -> Result<Self> {
+        match values.get(0) {
+            None => Err(anyhow!("cannot decode empty array")),
+            Some(Value::String(_)) => homogeneous_array!(values, String, StringArray),
+            Some(Value::EncodedString(_)) => {
+                homogeneous_array!(values, EncodedString, EncodedStringArray)
+            }
+            Some(Value::ID(_)) => homogeneous_array!(values, ID, IDArray),
+            Some(Value::UInt64(_)) => homogeneous_array!(values, UInt64, UInt64Array),
+            Some(_) => Err(anyhow!("TODO")),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{EncodedString, ID};
+
+    #[test]
+    fn round_trip_encoded_string() {
+        let instr = "qwerty9_12".to_owned();
+        let enc = EncodedString::try_from(instr.as_str()).unwrap();
+        let outstr = enc.to_string();
+        assert_eq!(instr, outstr);
+    }
+
+    #[test]
+    fn round_trip_id() {
+        let company = "company.volatile.renat.siauliai";
+        let id = ID::try_from(company).unwrap();
+        assert_eq!(id.to_string(), company);
     }
 }
