@@ -93,6 +93,18 @@ impl ID {
     }
 }
 
+impl PartialOrd for ID {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.to_string().partial_cmp(&other.to_string())
+    }
+}
+
+impl Ord for ID {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.to_string().cmp(&other.to_string())
+    }
+}
+
 impl ToString for ID {
     fn to_string(&self) -> String {
         match self {

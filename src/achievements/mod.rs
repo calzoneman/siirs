@@ -1,5 +1,5 @@
 use anyhow::{Result, bail};
-use std::{collections::HashMap, fs::File, io::Read};
+use std::{collections::{HashMap, BTreeMap}, fs::File, io::Read};
 
 use crate::{sii::{value::ID, parser::DataBlock, game::GameSave}, data_get, achievements::sii_text::{Lexer, Parser}};
 
@@ -38,7 +38,7 @@ fn print_results(achievement_name: String, requirements: Vec<Requirement>) {
     print_boxed(&achievement_name);
     for req in requirements {
         let prefix = if req.status == RequirementStatus::Completed {
-            "\x1b[1;32m✓\x1b[0;37m "
+            "\x1b[1;32m✓\x1b[1;30m "
         } else {
             "\x1b[0m  "
         };
@@ -106,7 +106,7 @@ struct AchievementEachCompany {
     id: ID,
     achievement_name: String,
     // target company ID -> required # of jobs
-    targets: HashMap<ID, usize>
+    targets: BTreeMap<ID, usize>
 }
 
 impl TryFrom<DataBlock> for AchievementEachCompany {
@@ -123,7 +123,7 @@ impl TryFrom<DataBlock> for AchievementEachCompany {
 
         let achievement_name = data_get!(value, "achievement_name", String)?
             .to_owned();
-        let mut targets = HashMap::new();
+        let mut targets = BTreeMap::new();
         let target_arr = data_get!(value, "targets", StringArray)?;
         for t in target_arr {
             let target_id = ID::try_from(t.as_str())?;
