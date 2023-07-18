@@ -77,7 +77,7 @@ macro_rules! expect_char {
 }
 
 #[derive(Debug)]
-enum Token {
+pub(crate) enum Token {
     Identifier(String),
     QuotedString(String),
     // All numerics without decimals parsed as u64 for simplicity; this is good
@@ -92,9 +92,15 @@ enum Token {
     LeftRightBracket,
 }
 
-struct Lexer<I>(Peekable<I>)
+pub(crate) struct Lexer<I>(Peekable<I>)
 where
     I: Iterator<Item = std::io::Result<u8>>;
+
+impl<I: Iterator<Item = std::io::Result<u8>>> Lexer<I> {
+    pub(crate) fn new(iter: Peekable<I>) -> Self {
+        Self(iter)
+    }
+}
 
 impl<I: Iterator<Item = std::io::Result<u8>>> Lexer<I> {
     fn next_inner(&mut self) -> Result<Token> {
@@ -228,7 +234,7 @@ macro_rules! match_token {
 
 /// A good-enough textual sii file parser -- good enough to can parse achievements.sii
 // TODO: make pub, make the new() handle creating a lexer from file
-struct Parser<L: Iterator<Item = Result<Token>>> {
+pub(crate) struct Parser<L: Iterator<Item = Result<Token>>> {
     lexer: Peekable<L>,
 }
 

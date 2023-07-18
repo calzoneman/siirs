@@ -57,6 +57,9 @@ fn main() -> Result<()> {
                         println!("{:?}", block);
                     }
                 }
+                "check-achievements-v2" => {
+                    achievements::check_achievements(&save, "5C075DC23D8D177-achievements.sii")?;
+                }
                 _ => bail!("unknown command {}", args[1]),
             }
         }
