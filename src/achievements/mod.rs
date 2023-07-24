@@ -23,6 +23,11 @@ pub fn check_achievements(conn: Connection, achievements_sii: &str) -> Result<()
                 let (name, req) = achievement.eval(&save_data)?;
                 print_results(name, req);
             }
+            Some(Ok(t)) if t.struct_name == "achievement_visit_city_data" => {
+                let achievement = AchievementVisitCity::try_from(t)?;
+                let (name, req) = achievement.eval(&save_data)?;
+                print_results(name, req);
+            }
             Some(Ok(_)) => {}
             Some(Err(e)) => {
                 bail!(e)
@@ -179,6 +184,63 @@ impl Achievement for AchievementEachCompany {
                     name: t.to_string(),
                     status,
                     progress_description: format!("{}/{}", completed, c),
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok((self.achievement_name.to_owned(), requirements))
+    }
+}
+
+struct AchievementVisitCity {
+    achievement_name: String,
+    cities: Vec<String>,
+}
+
+impl TryFrom<DataBlock> for AchievementVisitCity {
+    type Error = anyhow::Error;
+
+    fn try_from(value: DataBlock) -> Result<Self> {
+        if data_get!(value, "event_name", String)? != "city_visited" {
+            bail!("expected achievement_visit_city_data to have event_name = city_visited");
+        }
+
+        let achievement_name = data_get!(value, "achievement_name", String)?.clone();
+        let cities = data_get!(value, "cities", StringArray)?.clone();
+        Ok(Self {
+            achievement_name,
+            cities,
+        })
+    }
+}
+
+impl Achievement for AchievementVisitCity {
+    fn eval(&self, save: &AchievementSaveData) -> Result<(String, Vec<Requirement>)> {
+        let query = "
+            SELECT (CASE WHEN ? IN (SELECT value FROM json_each(visited_cities))
+                    THEN 1
+                    ELSE 0 END)
+              FROM ECONOMY;";
+        let requirements = self
+            .cities
+            .iter()
+            .map(|c| {
+                let completed: usize =
+                    save.conn
+                        .query_row(&query, [c], |row| {
+                            row.get(0)
+                        })?;
+
+                let status = if completed > 0 {
+                    RequirementStatus::Completed
+                } else {
+                    RequirementStatus::NotStarted
+                };
+
+                Ok(Requirement {
+                    name: c.clone(),
+                    status,
+                    progress_description: "visit".to_owned(),
                 })
             })
             .collect::<Result<Vec<_>>>()?;
