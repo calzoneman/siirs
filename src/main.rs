@@ -2,6 +2,7 @@ use std::{env, fs::File};
 
 use anyhow::{bail, Result};
 use compress::zlib;
+use rusqlite::Connection;
 use sii::{
     crypt::Decryptor,
     game::{FromGameSave, GameSave, SaveSummary},
@@ -26,10 +27,20 @@ fn main() -> Result<()> {
             let decrypted = Decryptor::new(enc_file).decrypt()?;
             let zread = zlib::Decoder::new(decrypted.as_slice());
             let parser = Parser::new(zread)?;
-            sqlite::copy_to_sqlite(parser, &args[3])?;
+            let mut conn = Connection::open(&args[3])?;
+            sqlite::copy_to_sqlite(parser, &mut conn)?;
         }
         "check-achievements" => {
             achivements::check_achivement_status(&args[2])?;
+        }
+        "check-achievements-v2" => {
+            let enc_file = File::open(&args[2])?;
+            let decrypted = Decryptor::new(enc_file).decrypt()?;
+            let zread = zlib::Decoder::new(decrypted.as_slice());
+            let parser = Parser::new(zread)?;
+            let mut conn = Connection::open(":memory:")?;
+            sqlite::copy_to_sqlite(parser, &mut conn)?;
+            achievements::check_achievements(conn, "5C075DC23D8D177-achievements.sii")?;
         }
 
         _ => {
@@ -56,9 +67,6 @@ fn main() -> Result<()> {
                     for (_, block) in save.iter_blocks_named(&args[3]) {
                         println!("{:?}", block);
                     }
-                }
-                "check-achievements-v2" => {
-                    achievements::check_achievements(&save, "5C075DC23D8D177-achievements.sii")?;
                 }
                 _ => bail!("unknown command {}", args[1]),
             }

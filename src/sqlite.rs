@@ -1,6 +1,6 @@
 use std::{io::Read, iter};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use rusqlite::{types::ToSqlOutput, Connection, ToSql, Transaction};
 
 use crate::sii::{
@@ -14,8 +14,7 @@ macro_rules! quoted {
     };
 }
 
-pub fn copy_to_sqlite<R: Read>(mut parser: Parser<R>, filename: &str) -> Result<()> {
-    let mut conn = Connection::open(filename)?;
+pub fn copy_to_sqlite<R: Read>(mut parser: Parser<R>, conn: &mut Connection) -> Result<()> {
     let tx = conn.transaction()?;
 
     loop {
@@ -36,7 +35,6 @@ fn create_table(tx: &Transaction, s: &StructDef) -> Result<()> {
         .collect::<Vec<String>>();
 
     let stmt = format!("CREATE TABLE {} ({})", s.name, fields.join(", "));
-    eprintln!("{}", stmt);
     tx.execute(&stmt, ())?;
     Ok(())
 }
@@ -60,8 +58,8 @@ fn insert_struct(tx: &Transaction, data: &DataBlock) -> Result<()> {
         params.join(", ")
     );
     let bound = rusqlite::params_from_iter(bindings.iter());
-    eprintln!("insert {}: {}", data.struct_name, data.id.to_string());
-    tx.execute(&query, bound)?;
+    tx.execute(&query, bound)
+        .context(format!("when inserting {:?}", &data))?;
 
     Ok(())
 }
@@ -127,7 +125,8 @@ impl ToSql for Value {
             Value::UInt16Array(a) => Ok(ToSqlOutput::from(json_numeric_array(a))),
             Value::Int64(v) => v.to_sql(),
             Value::Int64Array(a) => Ok(ToSqlOutput::from(json_numeric_array(a))),
-            Value::UInt64(v) => v.to_sql(),
+            // TODO: because of online_job_id: 18446744073709551615
+            Value::UInt64(v) => Ok(ToSqlOutput::from(*v as i64)),
             Value::UInt64Array(a) => Ok(ToSqlOutput::from(json_numeric_array(a))),
             Value::ByteBool(b) => b.to_sql(),
             Value::ByteBoolArray(a) => Ok(ToSqlOutput::from(json_numeric_array(a))),

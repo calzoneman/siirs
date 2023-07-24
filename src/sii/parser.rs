@@ -27,7 +27,7 @@ pub struct DataBlock {
 
 #[macro_export]
 macro_rules! data_get {
-    ($b:ident, $fname:literal, $variant:ident) => {
+    ($b:ident, $fname:expr, $variant:ident) => {
         match $b.fields.get($fname) {
             None => Err(anyhow::anyhow!("missing field {}", $fname)),
             Some(crate::sii::value::Value::$variant(v)) => Ok(v),

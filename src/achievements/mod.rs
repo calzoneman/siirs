@@ -1,12 +1,17 @@
-use anyhow::{Result, bail};
-use std::{collections::{HashMap, BTreeMap}, fs::File, io::Read};
+use anyhow::{bail, Result};
+use rusqlite::Connection;
+use std::{collections::BTreeMap, fs::File, io::Read};
 
-use crate::{sii::{value::ID, parser::DataBlock, game::GameSave}, data_get, achievements::sii_text::{Lexer, Parser}};
+use crate::{
+    achievements::sii_text::{Lexer, Parser},
+    data_get,
+    sii::{parser::DataBlock, value::ID},
+};
 
 mod sii_text;
 
-pub fn check_achievements(save: &GameSave, achievements_sii: &str) -> Result<()> {
-    let save_data = AchievementSaveData::try_from(save)?;
+pub fn check_achievements(conn: Connection, achievements_sii: &str) -> Result<()> {
+    let save_data = AchievementSaveData::new(conn)?;
     let f = File::open(achievements_sii)?;
     let lex = Lexer::new(f.bytes().peekable());
     let mut parser = Parser::new(lex).unwrap();
@@ -14,14 +19,9 @@ pub fn check_achievements(save: &GameSave, achievements_sii: &str) -> Result<()>
     loop {
         match parser.next() {
             Some(Ok(t)) if t.struct_name == "achievement_each_company_data" => {
-                let id = t.id.to_string();
-                if let Ok(achievement) = AchievementEachCompany::try_from(t) {
-                    let (name, req) = achievement.eval(&save_data)?;
-                    print_results(name, req);
-                } else {
-                    println!("skipping unhandled achievement {}", id);
-                    println!();
-                }
+                let achievement = AchievementEachCompany::try_from(t)?;
+                let (name, req) = achievement.eval(&save_data)?;
+                print_results(name, req);
             }
             Some(Ok(_)) => {}
             Some(Err(e)) => {
@@ -59,7 +59,7 @@ fn print_boxed(s: &str) {
 enum RequirementStatus {
     NotStarted,
     Started,
-    Completed
+    Completed,
 }
 
 struct Requirement {
@@ -73,40 +73,30 @@ trait Achievement {
 }
 
 struct AchievementSaveData {
-    jobs: Vec<(ID, ID)>
+    conn: Connection,
 }
 
 impl AchievementSaveData {
-    fn count_jobs_by_target(&self, target: &ID) -> Result<usize> {
-        Ok(self.jobs.iter().filter(|(_, t)| t == target).count())
-    }
-
-    fn company_id(s: &String) -> Result<ID> {
-        let stripped = s.replace("company.volatile.", "");
-        stripped.try_into()
-    }
-}
-
-impl TryFrom<&GameSave> for AchievementSaveData {
-    type Error = anyhow::Error;
-
-    fn try_from(save: &GameSave) -> Result<Self> {
-        let jobs = save.iter_blocks_named("delivery_log_entry")
-            .map(|(_, e)| {
-                let params = data_get!(e, "params", StringArray)?;
-                Ok((Self::company_id(&params[1])?, Self::company_id(&params[2])?))
-            })
-            .collect::<Result<Vec<_>>>()?;
-
-        Ok(Self { jobs })
+    fn new(conn: Connection) -> Result<Self> {
+        conn.execute_batch(
+            "
+            CREATE TEMPORARY VIEW IF NOT EXISTS v_deliveries AS
+            SELECT params->>1 AS source,
+                   params->>2 AS target,
+                   params->>3 AS cargo
+              FROM delivery_log_entry;
+        ",
+        )?;
+        Ok(Self { conn })
     }
 }
 
 struct AchievementEachCompany {
-    id: ID,
     achievement_name: String,
-    // target company ID -> required # of jobs
-    targets: BTreeMap<ID, usize>
+    match_field: &'static str,
+    // company ID -> required # of jobs
+    companies: BTreeMap<ID, usize>,
+    required_cargo: Option<Vec<String>>,
 }
 
 impl TryFrom<DataBlock> for AchievementEachCompany {
@@ -114,53 +104,91 @@ impl TryFrom<DataBlock> for AchievementEachCompany {
 
     fn try_from(value: DataBlock) -> Result<Self> {
         if value.struct_name != "achievement_each_company_data" {
-            bail!("cannot decode AchievementEachCompany from {}", value.struct_name);
+            bail!(
+                "cannot decode AchievementEachCompany from {}",
+                value.struct_name
+            );
         }
 
-        if value.fields.contains_key("sources") || value.fields.contains_key("cargos") {
-            bail!("cannot decode achievement_each_company_data with sources or cargos yet");
-        }
+        let match_field = if value.fields.contains_key("sources") {
+            "sources"
+        } else if value.fields.contains_key("targets") {
+            "targets"
+        } else {
+            bail!("achievement {:?} lacks sources or targets", value.id)
+        };
 
-        let achievement_name = data_get!(value, "achievement_name", String)?
-            .to_owned();
-        let mut targets = BTreeMap::new();
-        let target_arr = data_get!(value, "targets", StringArray)?;
+        let required_cargo = if value.fields.contains_key("cargos") {
+            Some(data_get!(value, "cargos", StringArray)?.clone())
+        } else {
+            None
+        };
+
+        let achievement_name = data_get!(value, "achievement_name", String)?.to_owned();
+        let mut companies = BTreeMap::new();
+        let target_arr = data_get!(value, match_field, StringArray)?;
         for t in target_arr {
             let target_id = ID::try_from(t.as_str())?;
-            if !targets.contains_key(&target_id) {
-                targets.insert(target_id.clone(), 0);
+            if !companies.contains_key(&target_id) {
+                companies.insert(target_id.clone(), 0);
             }
 
-            *(targets.get_mut(&target_id).expect("inserted if didn't exist")) += 1;
+            *(companies.get_mut(&target_id).unwrap()) += 1;
         }
 
         Ok(Self {
-            id: value.id,
             achievement_name,
-            targets
+            match_field,
+            companies,
+            required_cargo,
         })
     }
 }
 
 impl Achievement for AchievementEachCompany {
     fn eval(&self, save: &AchievementSaveData) -> Result<(String, Vec<Requirement>)> {
-        let requirements = self.targets.iter().map(|(t, c)| {
-            let completed = save.count_jobs_by_target(t)?;
-            let status = if completed >= *c {
-                RequirementStatus::Completed
-            } else if completed > 0 {
-                RequirementStatus::Started
-            } else {
-                RequirementStatus::NotStarted
-            };
+        let mut query = format!(
+            "SELECT COUNT(1) FROM temp.v_deliveries WHERE {} = ?",
+            &self.match_field[..self.match_field.len() - 1]
+        );
+        let cargo_params = if let Some(ref cargo) = self.required_cargo {
+            query += &format!(" AND cargo IN ({})", sqlite_placeholders(cargo.len()));
+            cargo.iter().map(|c| format!("cargo.{}", c)).collect()
+        } else {
+            vec![]
+        };
+        let requirements = self
+            .companies
+            .iter()
+            .map(|(t, c)| {
+                let mut params = vec![format!("company.volatile.{}", t.to_string())];
+                params.append(&mut cargo_params.clone());
+                let completed: usize =
+                    save.conn
+                        .query_row(&query, rusqlite::params_from_iter(params), |row| row.get(0))?;
 
-            Ok(Requirement {
-                name: t.to_string(),
-                status, 
-                progress_description: format!("{}/{}", completed, c)
+                let status = if completed >= *c {
+                    RequirementStatus::Completed
+                } else if completed > 0 {
+                    RequirementStatus::Started
+                } else {
+                    RequirementStatus::NotStarted
+                };
+
+                Ok(Requirement {
+                    name: t.to_string(),
+                    status,
+                    progress_description: format!("{}/{}", completed, c),
+                })
             })
-        }).collect::<Result<Vec<_>>>()?;
+            .collect::<Result<Vec<_>>>()?;
 
         Ok((self.achievement_name.to_owned(), requirements))
     }
+}
+
+fn sqlite_placeholders(count: usize) -> String {
+    let mut s = "?,".repeat(count);
+    s.pop();
+    s
 }
