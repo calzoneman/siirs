@@ -28,6 +28,11 @@ pub fn check_achievements(conn: Connection, achievements_sii: &str) -> Result<()
                 let (name, req) = achievement.eval(&save_data)?;
                 print_results(name, req);
             }
+            Some(Ok(t)) if t.struct_name == "achievement_each_cargo_data" => {
+                let achievement = AchievementEachCargo::try_from(t)?;
+                let (name, req) = achievement.eval(&save_data)?;
+                print_results(name, req);
+            }
             Some(Ok(_)) => {}
             Some(Err(e)) => {
                 bail!(e)
@@ -241,6 +246,60 @@ impl Achievement for AchievementVisitCity {
                     name: c.clone(),
                     status,
                     progress_description: "visit".to_owned(),
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok((self.achievement_name.to_owned(), requirements))
+    }
+}
+
+struct AchievementEachCargo {
+    achievement_name: String,
+    cargos: Vec<String>
+}
+
+impl TryFrom<DataBlock> for AchievementEachCargo {
+    type Error = anyhow::Error;
+
+    fn try_from(value: DataBlock) -> Result<Self> {
+        if value.struct_name != "achievement_each_cargo_data" {
+            bail!(
+                "cannot decode AchievementEachCargo from {}",
+                value.struct_name
+            );
+        }
+
+        let cargos = data_get!(value, "cargos", StringArray)?.clone();
+        let achievement_name = data_get!(value, "achievement_name", String)?.to_owned();
+
+        Ok(Self {
+            achievement_name,
+            cargos,
+        })
+    }
+}
+
+impl Achievement for AchievementEachCargo {
+    fn eval(&self, save: &AchievementSaveData) -> Result<(String, Vec<Requirement>)> {
+        let requirements = self
+            .cargos
+            .iter()
+            .map(|c| {
+                let completed: usize =
+                    save.conn
+                        .query_row("SELECT COUNT(1) FROM temp.v_deliveries WHERE cargo = 'cargo.' || ?", [c], |row| row.get(0))?;
+
+                let status = if completed > 0 {
+                    RequirementStatus::Completed
+                } else {
+                    RequirementStatus::NotStarted
+                };
+
+                Ok(Requirement {
+                    name: c.clone(),
+                    status,
+                    progress_description: format!("{}/1", completed),
                 })
             })
             .collect::<Result<Vec<_>>>()?;
