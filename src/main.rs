@@ -14,6 +14,7 @@ mod achivements;
 mod prospective_cities;
 mod sii;
 mod sqlite;
+mod threenk;
 
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
@@ -41,6 +42,11 @@ fn main() -> Result<()> {
             let mut conn = Connection::open(":memory:")?;
             sqlite::copy_to_sqlite(parser, &mut conn)?;
             achievements::check_achievements(conn, "5C075DC23D8D177-achievements.sii")?;
+        }
+        "decrypt-3nk" => {
+            let mut enc_file = File::open(&args[2])?;
+            let mut dec_file = File::create(&args[3])?;
+            threenk::decrypt(&mut enc_file, &mut dec_file)?;
         }
 
         _ => {
