@@ -1,7 +1,7 @@
 use std::io::{Read, Write};
 
-use anyhow::{Result, bail};
-use byteorder::{ReadBytesExt, BigEndian, WriteBytesExt};
+use anyhow::{bail, Result};
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 const THREENK_SIG: u32 = u32::from_be_bytes(*b"3nK\x01");
 const XOR_TABLE: [u8; 256] = [

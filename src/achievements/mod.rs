@@ -8,29 +8,41 @@ use crate::{
     sii::{parser::DataBlock, value::ID},
 };
 
+use self::locale::LocaleDB;
+
+mod locale;
 mod sii_text;
 
-pub fn check_achievements(conn: Connection, achievements_sii: &str) -> Result<()> {
+pub fn check_achievements(
+    conn: Connection,
+    achievements_sii: &str,
+    locale_sii: Option<&str>,
+) -> Result<()> {
     let save_data = AchievementSaveData::new(conn)?;
     let f = File::open(achievements_sii)?;
     let lex = Lexer::new(f.bytes().peekable());
     let mut parser = Parser::new(lex).unwrap();
+    let locale_db = if let Some(filename) = locale_sii {
+        LocaleDB::new_from_file(filename)?
+    } else {
+        LocaleDB::new_empty()
+    };
 
     loop {
         match parser.next() {
             Some(Ok(t)) if t.struct_name == "achievement_each_company_data" => {
                 let achievement = AchievementEachCompany::try_from(t)?;
-                let (name, req) = achievement.eval(&save_data)?;
+                let (name, req) = achievement.eval(&save_data, &locale_db)?;
                 print_results(name, req);
             }
             Some(Ok(t)) if t.struct_name == "achievement_visit_city_data" => {
                 let achievement = AchievementVisitCity::try_from(t)?;
-                let (name, req) = achievement.eval(&save_data)?;
+                let (name, req) = achievement.eval(&save_data, &locale_db)?;
                 print_results(name, req);
             }
             Some(Ok(t)) if t.struct_name == "achievement_each_cargo_data" => {
                 let achievement = AchievementEachCargo::try_from(t)?;
-                let (name, req) = achievement.eval(&save_data)?;
+                let (name, req) = achievement.eval(&save_data, &locale_db)?;
                 print_results(name, req);
             }
             Some(Ok(_)) => {}
@@ -79,7 +91,11 @@ struct Requirement {
 }
 
 trait Achievement {
-    fn eval(&self, save: &AchievementSaveData) -> Result<(String, Vec<Requirement>)>;
+    fn eval(
+        &self,
+        save: &AchievementSaveData,
+        ldb: &LocaleDB,
+    ) -> Result<(String, Vec<Requirement>)>;
 }
 
 struct AchievementSaveData {
@@ -156,7 +172,11 @@ impl TryFrom<DataBlock> for AchievementEachCompany {
 }
 
 impl Achievement for AchievementEachCompany {
-    fn eval(&self, save: &AchievementSaveData) -> Result<(String, Vec<Requirement>)> {
+    fn eval(
+        &self,
+        save: &AchievementSaveData,
+        _ldb: &LocaleDB,
+    ) -> Result<(String, Vec<Requirement>)> {
         let mut query = format!(
             "SELECT COUNT(1) FROM temp.v_deliveries WHERE {} = ?",
             &self.match_field[..self.match_field.len() - 1]
@@ -220,7 +240,11 @@ impl TryFrom<DataBlock> for AchievementVisitCity {
 }
 
 impl Achievement for AchievementVisitCity {
-    fn eval(&self, save: &AchievementSaveData) -> Result<(String, Vec<Requirement>)> {
+    fn eval(
+        &self,
+        save: &AchievementSaveData,
+        ldb: &LocaleDB,
+    ) -> Result<(String, Vec<Requirement>)> {
         let query = "
             SELECT (CASE WHEN ? IN (SELECT value FROM json_each(visited_cities))
                     THEN 1
@@ -230,11 +254,7 @@ impl Achievement for AchievementVisitCity {
             .cities
             .iter()
             .map(|c| {
-                let completed: usize =
-                    save.conn
-                        .query_row(&query, [c], |row| {
-                            row.get(0)
-                        })?;
+                let completed: usize = save.conn.query_row(&query, [c], |row| row.get(0))?;
 
                 let status = if completed > 0 {
                     RequirementStatus::Completed
@@ -243,7 +263,7 @@ impl Achievement for AchievementVisitCity {
                 };
 
                 Ok(Requirement {
-                    name: c.clone(),
+                    name: ldb.try_localize(c).unwrap_or(c).to_string(),
                     status,
                     progress_description: "visit".to_owned(),
                 })
@@ -256,7 +276,7 @@ impl Achievement for AchievementVisitCity {
 
 struct AchievementEachCargo {
     achievement_name: String,
-    cargos: Vec<String>
+    cargos: Vec<String>,
 }
 
 impl TryFrom<DataBlock> for AchievementEachCargo {
@@ -281,14 +301,20 @@ impl TryFrom<DataBlock> for AchievementEachCargo {
 }
 
 impl Achievement for AchievementEachCargo {
-    fn eval(&self, save: &AchievementSaveData) -> Result<(String, Vec<Requirement>)> {
+    fn eval(
+        &self,
+        save: &AchievementSaveData,
+        ldb: &LocaleDB,
+    ) -> Result<(String, Vec<Requirement>)> {
         let requirements = self
             .cargos
             .iter()
             .map(|c| {
-                let completed: usize =
-                    save.conn
-                        .query_row("SELECT COUNT(1) FROM temp.v_deliveries WHERE cargo = 'cargo.' || ?", [c], |row| row.get(0))?;
+                let completed: usize = save.conn.query_row(
+                    "SELECT COUNT(1) FROM temp.v_deliveries WHERE cargo = 'cargo.' || ?",
+                    [c],
+                    |row| row.get(0),
+                )?;
 
                 let status = if completed > 0 {
                     RequirementStatus::Completed
@@ -297,7 +323,10 @@ impl Achievement for AchievementEachCargo {
                 };
 
                 Ok(Requirement {
-                    name: c.clone(),
+                    name: ldb
+                        .try_localize(&format!("cn_{}", c))
+                        .unwrap_or(c)
+                        .to_string(),
                     status,
                     progress_description: format!("{}/1", completed),
                 })

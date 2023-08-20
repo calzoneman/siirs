@@ -124,7 +124,11 @@ impl<I: Iterator<Item = std::io::Result<u8>>> Lexer<I> {
             }
             b'[' => self.read_left_right_bracket(),
             b'"' => self.read_quoted_string(),
-            x => Err(anyhow!("unexpected '{}'", *x as char)),
+            0xEF => {
+                self.skip_utf8_bom()?;
+                self.next_inner()
+            }
+            x => Err(anyhow!("unexpected '{}' (0x{:02X})", *x as char, *x)),
         }
     }
 
@@ -162,8 +166,33 @@ impl<I: Iterator<Item = std::io::Result<u8>>> Lexer<I> {
 
     fn read_quoted_string(&mut self) -> Result<Token> {
         expect_char!(next!(self.0), b'"');
-        // all bytes except "
-        let s = take_string!(self.0, 0u8..=33u8 | 35u8..=255u8);
+        let mut tmp = Vec::new();
+        loop {
+            match *peek!(self.0) {
+                b'\\' => {
+                    next!(self.0);
+                    match *peek!(self.0) {
+                        c @ (b'"' | b'\\') => {
+                            next!(self.0);
+                            tmp.push(c);
+                        }
+                        b'n' => {
+                            next!(self.0);
+                            tmp.push(b'\n');
+                        }
+                        c => bail!("unexpected quoted string escape '\\{}'", c as char),
+                    }
+                }
+                // all bytes except "
+                c @ (0u8..=33u8 | 35u8..=255u8) => {
+                    next!(self.0);
+                    tmp.push(c);
+                }
+                _ => break,
+            }
+        }
+
+        let s = String::from_utf8(tmp)?;
         expect_char!(next!(self.0), b'"');
         Ok(Token::QuotedString(s))
     }
@@ -179,6 +208,13 @@ impl<I: Iterator<Item = std::io::Result<u8>>> Lexer<I> {
             }
         }
 
+        Ok(())
+    }
+
+    fn skip_utf8_bom(&mut self) -> Result<()> {
+        expect_char!(next!(self.0), 0xEF);
+        expect_char!(next!(self.0), 0xBB);
+        expect_char!(next!(self.0), 0xBF);
         Ok(())
     }
 
@@ -202,10 +238,7 @@ impl<I: Iterator<Item = std::io::Result<u8>>> Iterator for Lexer<I> {
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.next_inner() {
-            Ok(t) => {
-                // dbg!(&t);
-                Some(Ok(t))
-            }
+            Ok(t) => Some(Ok(t)),
             Err(e) => match e.downcast_ref::<EOFError>() {
                 Some(_) => None,
                 None => Some(Err(e)),

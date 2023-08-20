@@ -41,7 +41,11 @@ fn main() -> Result<()> {
             let parser = Parser::new(zread)?;
             let mut conn = Connection::open(":memory:")?;
             sqlite::copy_to_sqlite(parser, &mut conn)?;
-            achievements::check_achievements(conn, "5C075DC23D8D177-achievements.sii")?;
+            achievements::check_achievements(
+                conn,
+                "5C075DC23D8D177-achievements.sii",
+                Some("en_us_local.sii"),
+            )?;
         }
         "decrypt-3nk" => {
             let mut enc_file = File::open(&args[2])?;
