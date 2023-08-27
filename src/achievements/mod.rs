@@ -5,7 +5,7 @@ use std::{collections::BTreeMap, fs::File, io::Read};
 use crate::{
     achievements::sii_text::{Lexer, Parser},
     data_get,
-    sii::{parser::DataBlock, value::ID},
+    sii::{parser::DataBlock, value::ID}, scs::Archive,
 };
 
 use self::locale::LocaleDB;
@@ -13,20 +13,25 @@ use self::locale::LocaleDB;
 mod locale;
 mod sii_text;
 
+const ACHIEVEMENTS_SII_HASH: u64 = 0x5C075DC23D8D177;
+
 pub fn check_achievements(
     conn: Connection,
-    achievements_sii: &str,
+    core_scs_path: &str,
     locale_sii: Option<&str>,
 ) -> Result<()> {
     let save_data = AchievementSaveData::new(conn)?;
-    let f = File::open(achievements_sii)?;
-    let lex = Lexer::new(f.bytes().peekable());
-    let mut parser = Parser::new(lex).unwrap();
+    // TODO: load from locale.scs
     let locale_db = if let Some(filename) = locale_sii {
         LocaleDB::new_from_file(filename)?
     } else {
         LocaleDB::new_empty()
     };
+
+    let mut core = Archive::load_from_path(core_scs_path)?;
+    let reader = core.open_entry(ACHIEVEMENTS_SII_HASH)?;
+    let lex = Lexer::new(reader.bytes().peekable());
+    let mut parser = Parser::new(lex)?;
 
     loop {
         match parser.next() {

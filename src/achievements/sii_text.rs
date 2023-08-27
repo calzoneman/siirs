@@ -266,6 +266,7 @@ macro_rules! match_token {
 }
 
 /// A good-enough textual sii file parser -- good enough to can parse achievements.sii
+/// and the en_us base localization sii
 // TODO: make pub, make the new() handle creating a lexer from file
 pub(crate) struct Parser<L: Iterator<Item = Result<Token>>> {
     lexer: Peekable<L>,

@@ -1,7 +1,7 @@
 use std::{env, fs::File};
 
 use anyhow::{bail, Result};
-use compress::zlib;
+use flate2::read::ZlibDecoder;
 use rusqlite::Connection;
 use sii::{
     crypt::Decryptor,
@@ -10,8 +10,8 @@ use sii::{
 };
 
 mod achievements;
-mod achivements;
 mod prospective_cities;
+mod scs;
 mod sii;
 mod sqlite;
 mod threenk;
@@ -26,24 +26,21 @@ fn main() -> Result<()> {
         "to-sqlite" => {
             let enc_file = File::open(&args[2])?;
             let decrypted = Decryptor::new(enc_file).decrypt()?;
-            let zread = zlib::Decoder::new(decrypted.as_slice());
+            let zread = ZlibDecoder::new(decrypted.as_slice());
             let parser = Parser::new(zread)?;
             let mut conn = Connection::open(&args[3])?;
             sqlite::copy_to_sqlite(parser, &mut conn)?;
         }
-        "check-achievements" => {
-            achivements::check_achivement_status(&args[2])?;
-        }
         "check-achievements-v2" => {
             let enc_file = File::open(&args[2])?;
             let decrypted = Decryptor::new(enc_file).decrypt()?;
-            let zread = zlib::Decoder::new(decrypted.as_slice());
+            let zread = ZlibDecoder::new(decrypted.as_slice());
             let parser = Parser::new(zread)?;
             let mut conn = Connection::open(":memory:")?;
             sqlite::copy_to_sqlite(parser, &mut conn)?;
             achievements::check_achievements(
                 conn,
-                "5C075DC23D8D177-achievements.sii",
+                &args[3],
                 Some("en_us_local.sii"),
             )?;
         }
@@ -57,7 +54,7 @@ fn main() -> Result<()> {
             let fname = &args[2];
             let enc_file = File::open(fname)?;
             let decrypted = Decryptor::new(enc_file).decrypt()?;
-            let zread = zlib::Decoder::new(decrypted.as_slice());
+            let zread = ZlibDecoder::new(decrypted.as_slice());
             let save = GameSave::new(zread)?;
 
             match args[1].as_str() {
