@@ -3,8 +3,8 @@ use std::{env, fs::File};
 use anyhow::{bail, Result};
 use flate2::read::ZlibDecoder;
 use rusqlite::Connection;
+use crypt::sii::Decryptor;
 use sii::{
-    crypt::Decryptor,
     game::{FromGameSave, GameSave, SaveSummary},
     parser::Parser,
 };
@@ -14,7 +14,7 @@ mod prospective_cities;
 mod scs;
 mod sii;
 mod sqlite;
-mod threenk;
+mod crypt;
 
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
@@ -41,13 +41,13 @@ fn main() -> Result<()> {
             achievements::check_achievements(
                 conn,
                 &args[3],
-                Some("en_us_local.sii"),
+                Some(&args[4]),
             )?;
         }
         "decrypt-3nk" => {
             let mut enc_file = File::open(&args[2])?;
             let mut dec_file = File::create(&args[3])?;
-            threenk::decrypt(&mut enc_file, &mut dec_file)?;
+            crypt::threenk::decrypt_into(&mut enc_file, &mut dec_file)?;
         }
 
         _ => {

@@ -1,20 +1,21 @@
 use anyhow::{anyhow, Result};
-use std::{collections::HashMap, fs::File, io::Read};
+use std::{collections::HashMap, io::Read};
 
-use crate::data_get;
+use crate::{data_get, scs::Archive, crypt::threenk};
 
 use super::sii_text::{Lexer, Parser};
 
 pub struct LocaleDB(HashMap<String, String>);
 
 impl LocaleDB {
+    const EN_US_LOCAL_SII_HASH: u64 = 0x748A55BF49E4F39E; // locale/en_us/local.sii
+
     pub fn new_empty() -> Self {
         Self(HashMap::new())
     }
 
-    pub fn new_from_file(filename: &str) -> Result<Self> {
-        let f = File::open(filename)?;
-        let lex = Lexer::new(f.bytes().peekable());
+    pub fn new_from_reader<R: Read>(reader: &mut R) -> Result<Self> {
+        let lex = Lexer::new(reader.bytes().peekable());
         let mut parser = Parser::new(lex)?;
         let db_struct = parser
             .next()
@@ -28,6 +29,13 @@ impl LocaleDB {
         }
 
         Ok(Self(entries))
+    }
+
+    pub fn new_from_locale_scs(locale_scs_path: &str) -> Result<Self> {
+        let mut locale_scs = Archive::load_from_path(locale_scs_path)?;
+        let reader = locale_scs.open_entry(Self::EN_US_LOCAL_SII_HASH)?;
+        let mut decryptor = threenk::Decryptor::new(reader)?;
+        Self::new_from_reader(&mut decryptor)
     }
 
     pub fn try_localize(&self, key: &String) -> Option<&String> {

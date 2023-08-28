@@ -8,9 +8,6 @@ pub struct Archive {
     entries: HashMap<u64, Entry>
 }
 
-const SCS_SIGNATURE: u32 = u32::from_be_bytes(*b"SCS#");
-const CITYHASH_MARKER: u32 = u32::from_be_bytes(*b"CITY");
-
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum EntryType {
     UncompressedFile,
@@ -59,15 +56,18 @@ impl Entry {
 }
 
 impl Archive {
+    const SCS_SIGNATURE: u32 = u32::from_be_bytes(*b"SCS#");
+    const CITYHASH_MARKER: u32 = u32::from_be_bytes(*b"CITY");
+
     pub fn load_from_file(mut file: File) -> Result<Self> {
         let signature = file.read_u32::<BigEndian>()?;
-        if signature != SCS_SIGNATURE {
+        if signature != Self::SCS_SIGNATURE {
             bail!("signature does not match: {:X}", signature);
         }
 
         let _unknown_maybe_version = file.read_u32::<LittleEndian>()?;
         let cityhash = file.read_u32::<BigEndian>()?;
-        if cityhash != CITYHASH_MARKER {
+        if cityhash != Self::CITYHASH_MARKER {
             bail!("expected CITY marker");
         }
         let entry_count = file.read_u32::<LittleEndian>()? as usize;

@@ -1,3 +1,4 @@
+
 use std::io::Read;
 
 use aes::cipher::{block_padding::Pkcs7, BlockDecryptMut, KeyIvInit};
@@ -10,6 +11,9 @@ pub struct Decryptor<R: Read> {
     reader: R,
 }
 
+// TODO: ideally, Decryptor would implement Read, but that's somewhat annoying
+// to do with `cbc` due to needing to write your own wrapper for the block mode
+// decryption...
 impl<R> Decryptor<R>
 where
     R: Read,

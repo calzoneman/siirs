@@ -1,6 +1,6 @@
 use anyhow::{bail, Result};
 use rusqlite::Connection;
-use std::{collections::BTreeMap, fs::File, io::Read};
+use std::{collections::BTreeMap, io::Read};
 
 use crate::{
     achievements::sii_text::{Lexer, Parser},
@@ -18,12 +18,11 @@ const ACHIEVEMENTS_SII_HASH: u64 = 0x5C075DC23D8D177;
 pub fn check_achievements(
     conn: Connection,
     core_scs_path: &str,
-    locale_sii: Option<&str>,
+    locale_scs_path: Option<&str>,
 ) -> Result<()> {
     let save_data = AchievementSaveData::new(conn)?;
-    // TODO: load from locale.scs
-    let locale_db = if let Some(filename) = locale_sii {
-        LocaleDB::new_from_file(filename)?
+    let locale_db = if let Some(filename) = locale_scs_path {
+        LocaleDB::new_from_locale_scs(filename)?
     } else {
         LocaleDB::new_empty()
     };
