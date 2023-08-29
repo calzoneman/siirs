@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use std::{collections::HashMap, io::Read};
 
-use crate::{get_value_as, scs::Archive, crypt::threenk, sii::text::{Lexer, Parser}};
+use crate::{scs::Archive, crypt::threenk, sii::text::{Lexer, Parser}, take_value_as};
 
 pub struct LocaleDB(HashMap<String, String>);
 
@@ -15,15 +15,15 @@ impl LocaleDB {
     pub fn new_from_reader<R: Read>(reader: &mut R) -> Result<Self> {
         let lex = Lexer::new(reader.bytes().peekable());
         let mut parser = Parser::new(lex)?;
-        let db_struct = parser
+        let mut db_struct = parser
             .next()
             .ok_or_else(|| anyhow!("missing localization_db struct"))??;
 
         let mut entries = HashMap::new();
-        let keys = get_value_as!(db_struct, "key", StringArray)?;
-        let values = get_value_as!(db_struct, "val", StringArray)?;
-        for (key, value) in keys.iter().zip(values.iter()) {
-            entries.insert(key.clone(), value.clone());
+        let keys = take_value_as!(db_struct, "key", StringArray)?;
+        let values = take_value_as!(db_struct, "val", StringArray)?;
+        for (key, value) in keys.into_iter().zip(values.into_iter()) {
+            entries.insert(key, value);
         }
 
         Ok(Self(entries))
