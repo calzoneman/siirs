@@ -6,7 +6,7 @@ use rusqlite::Connection;
 use crypt::sii::Decryptor;
 use sii::{
     game::{FromGameSave, GameSave, SaveSummary},
-    parser::Parser,
+    binary::Parser,
 };
 
 mod achievements;

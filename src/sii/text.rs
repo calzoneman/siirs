@@ -6,10 +6,7 @@ use std::{
     iter::Peekable,
 };
 
-use crate::sii::{
-    parser::DataBlock,
-    value::{Value, ID},
-};
+use crate::sii::value::{Struct, Value, ID};
 
 // Workaround for Option<Result> awkwardness -- map None to EOFError for
 // the inner iterator, then let the outer iterator unwrap it.  Easier than
@@ -282,7 +279,7 @@ impl<L: Iterator<Item = Result<Token>>> Parser<L> {
         })
     }
 
-    fn next_inner(&mut self) -> Result<DataBlock> {
+    fn next_inner(&mut self) -> Result<Struct> {
         match self.lexer.peek() {
             Some(Ok(Token::RightBrace)) => eof!(),
             Some(Ok(Token::Identifier(_))) => self.read_struct(),
@@ -293,7 +290,7 @@ impl<L: Iterator<Item = Result<Token>>> Parser<L> {
     }
 
     // struct_name : struct_id { fields }
-    fn read_struct(&mut self) -> Result<DataBlock> {
+    fn read_struct(&mut self) -> Result<Struct> {
         let struct_name = match_token!(next!(self.lexer), Identifier);
         expect_token!(next!(self.lexer), Token::Colon);
         let struct_id = ID::try_from(match_token!(next!(self.lexer), Identifier))?;
@@ -357,7 +354,7 @@ impl<L: Iterator<Item = Result<Token>>> Parser<L> {
             fields.insert(name, array_value);
         }
 
-        Ok(DataBlock {
+        Ok(Struct {
             id: struct_id,
             struct_name: struct_name,
             fields: fields,
@@ -366,7 +363,7 @@ impl<L: Iterator<Item = Result<Token>>> Parser<L> {
 }
 
 impl<L: Iterator<Item = Result<Token>>> Iterator for Parser<L> {
-    type Item = Result<DataBlock>;
+    type Item = Result<Struct>;
 
     fn next(&mut self) -> Option<Self::Item> {
         // TODO: see if this ugliness can be hidden in a macro

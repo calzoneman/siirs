@@ -420,6 +420,35 @@ impl TryFrom<Vec<Value>> for Value {
     }
 }
 
+#[derive(Debug)]
+pub struct Struct {
+    pub id: ID,
+    pub struct_name: String,
+    pub fields: HashMap<String, Value>,
+}
+
+#[macro_export]
+macro_rules! get_value_as {
+    ($b:ident, $fname:expr, $variant:ident) => {
+        match $b.fields.get($fname) {
+            None => Err(anyhow::anyhow!("missing field {}", $fname)),
+            Some(crate::sii::value::Value::$variant(v)) => Ok(v),
+            Some(_) => Err(anyhow::anyhow!("mismatched type for {}", $fname)),
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! take_value_as {
+    ($b:ident, $fname:expr, $variant:ident) => {
+        match $b.fields.remove($fname) {
+            None => Err(anyhow::anyhow!("missing field {}", $fname)),
+            Some(crate::sii::value::Value::$variant(v)) => Ok(v),
+            Some(_) => Err(anyhow::anyhow!("mismatched type for {}", $fname)),
+        }
+    };
+}
+
 #[cfg(test)]
 mod tests {
     use super::{EncodedString, ID};

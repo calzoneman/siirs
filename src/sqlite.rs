@@ -4,8 +4,8 @@ use anyhow::{Context, Result};
 use rusqlite::{types::ToSqlOutput, Connection, ToSql, Transaction};
 
 use crate::sii::{
-    parser::{Block, DataBlock, Parser, StructDef},
-    value::{EncodedString, Value, ID},
+    binary::{Block, Parser, Schema},
+    value::{EncodedString, Struct, Value, ID},
 };
 
 macro_rules! quoted {
@@ -20,8 +20,8 @@ pub fn copy_to_sqlite<R: Read>(mut parser: Parser<R>, conn: &mut Connection) -> 
     loop {
         match parser.next_block()? {
             None => break,
-            Some(Block::Struct(struct_def)) => create_table(&tx, &struct_def)?,
-            Some(Block::Data(data)) => insert_struct(&tx, &data)?,
+            Some(Block::Schema(struct_def)) => create_table(&tx, &struct_def)?,
+            Some(Block::Struct(data)) => insert_struct(&tx, &data)?,
         }
     }
 
@@ -29,7 +29,7 @@ pub fn copy_to_sqlite<R: Read>(mut parser: Parser<R>, conn: &mut Connection) -> 
     Ok(())
 }
 
-fn create_table(tx: &Transaction, s: &StructDef) -> Result<()> {
+fn create_table(tx: &Transaction, s: &Schema) -> Result<()> {
     let fields = iter::once(quoted!("struct_id"))
         .chain(s.fields.iter().map(|f| quoted!(f.name)))
         .collect::<Vec<String>>();
@@ -39,7 +39,7 @@ fn create_table(tx: &Transaction, s: &StructDef) -> Result<()> {
     Ok(())
 }
 
-fn insert_struct(tx: &Transaction, data: &DataBlock) -> Result<()> {
+fn insert_struct(tx: &Transaction, data: &Struct) -> Result<()> {
     let mut fields = vec![quoted!("struct_id")];
     let mut params = vec!["?"];
     let id = Value::ID(data.id.clone());

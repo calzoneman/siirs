@@ -1,15 +1,15 @@
 use std::{collections::HashMap, io::Read};
 
-use crate::data_get;
+use crate::get_value_as;
 use anyhow::{anyhow, Result};
 
 use super::{
-    parser::{Block, DataBlock, Parser},
-    value::ID,
+    binary::{Block, Parser},
+    value::{ID, Struct},
 };
 
 pub struct GameSave {
-    blocks: HashMap<ID, DataBlock>,
+    blocks: HashMap<ID, Struct>,
 }
 
 pub trait FromGameSave
@@ -38,15 +38,15 @@ impl FromGameSave for SaveSummary {
         let dlog = save
             .single_block_named("delivery_log")
             .ok_or_else(|| anyhow!("missing delivery_log data"))?;
-        let dlog_entry_ids = data_get!(dlog, "entries", IDArray)?;
+        let dlog_entry_ids = get_value_as!(dlog, "entries", IDArray)?;
 
         Ok(Self {
-            total_fuel_liters: *data_get!(econ, "total_fuel_litres", UInt32)?,
-            total_fuel_cost: *data_get!(econ, "total_fuel_price", Int64)?,
-            total_fuel_visits: *data_get!(econ, "gas_station_visit_count", UInt32)?,
-            total_xp: *data_get!(econ, "experience_points", UInt32)?,
-            total_distance_driven: *data_get!(econ, "total_distance", UInt32)?,
-            total_cities_visited: data_get!(econ, "visited_cities", EncodedStringArray)?.len(),
+            total_fuel_liters: *get_value_as!(econ, "total_fuel_litres", UInt32)?,
+            total_fuel_cost: *get_value_as!(econ, "total_fuel_price", Int64)?,
+            total_fuel_visits: *get_value_as!(econ, "gas_station_visit_count", UInt32)?,
+            total_xp: *get_value_as!(econ, "experience_points", UInt32)?,
+            total_distance_driven: *get_value_as!(econ, "total_distance", UInt32)?,
+            total_cities_visited: get_value_as!(econ, "visited_cities", EncodedStringArray)?.len(),
             total_deliveries: dlog_entry_ids.len(),
         })
     }
@@ -60,8 +60,8 @@ impl GameSave {
         loop {
             match parser.next_block()? {
                 None => break,
-                Some(Block::Struct(_)) => {}
-                Some(Block::Data(db)) => {
+                Some(Block::Schema(_)) => {}
+                Some(Block::Struct(db)) => {
                     objects.insert(db.id.clone(), db);
                 }
             }
@@ -70,14 +70,14 @@ impl GameSave {
         Ok(Self { blocks: objects })
     }
 
-    pub fn get_block_by_id(&self, id: &ID) -> Option<&DataBlock> {
+    pub fn get_block_by_id(&self, id: &ID) -> Option<&Struct> {
         self.blocks.get(id)
     }
 
     pub fn iter_blocks_named<'a>(
         &'a self,
         name: &'a str,
-    ) -> Box<dyn Iterator<Item = (&ID, &DataBlock)> + 'a> {
+    ) -> Box<dyn Iterator<Item = (&ID, &Struct)> + 'a> {
         Box::new(
             self.blocks
                 .iter()
@@ -85,11 +85,11 @@ impl GameSave {
         )
     }
 
-    pub fn iter_blocks<'a>(&'a self) -> Box<dyn Iterator<Item = (&ID, &DataBlock)> + 'a> {
+    pub fn iter_blocks<'a>(&'a self) -> Box<dyn Iterator<Item = (&ID, &Struct)> + 'a> {
         Box::new(self.blocks.iter())
     }
 
-    pub fn single_block_named(&self, name: &str) -> Option<&DataBlock> {
+    pub fn single_block_named(&self, name: &str) -> Option<&Struct> {
         self.blocks
             .iter()
             .find(|(_, s)| s.struct_name == name)

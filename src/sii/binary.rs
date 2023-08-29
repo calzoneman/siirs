@@ -2,7 +2,7 @@ use anyhow::{anyhow, bail, Result};
 use byteorder::{LittleEndian, ReadBytesExt};
 use std::{collections::HashMap, io::Read};
 
-use super::value::{OrdinalStringTable, ReadFrom, Value, ID};
+use super::value::{OrdinalStringTable, ReadFrom, Value, ID, Struct};
 
 #[derive(Clone, Debug)]
 pub struct StructFieldDef {
@@ -12,38 +12,20 @@ pub struct StructFieldDef {
 }
 
 #[derive(Clone, Debug)]
-pub struct StructDef {
+pub struct Schema {
     pub id: u32,
     pub name: String,
     pub fields: Vec<StructFieldDef>,
 }
 
-#[derive(Debug)]
-pub struct DataBlock {
-    pub id: ID,
-    pub struct_name: String,
-    pub fields: HashMap<String, Value>,
-}
-
-#[macro_export]
-macro_rules! data_get {
-    ($b:ident, $fname:expr, $variant:ident) => {
-        match $b.fields.get($fname) {
-            None => Err(anyhow::anyhow!("missing field {}", $fname)),
-            Some(crate::sii::value::Value::$variant(v)) => Ok(v),
-            Some(_) => Err(anyhow::anyhow!("mismatched type for {}", $fname)),
-        }
-    };
-}
-
 pub enum Block {
-    Struct(StructDef),
-    Data(DataBlock),
+    Schema(Schema),
+    Struct(Struct),
 }
 
 pub struct Parser<R: Read> {
     reader: R,
-    struct_defs: HashMap<u32, StructDef>,
+    struct_defs: HashMap<u32, Schema>,
 }
 
 impl<R: Read> Parser<R> {
@@ -70,18 +52,18 @@ impl<R: Read> Parser<R> {
         let block_type = self.reader.read_u32::<LittleEndian>()?;
 
         if block_type == 0 {
-            let struct_def = self.parse_struct_def()?;
+            let struct_def = self.parse_schema()?;
             if let Some(ref block) = struct_def {
                 self.struct_defs.insert(block.id, block.clone());
             }
 
-            Ok(struct_def.map(Block::Struct))
+            Ok(struct_def.map(Block::Schema))
         } else {
-            Ok(Some(self.parse_data_block(block_type)?))
+            Ok(Some(self.parse_struct(block_type)?))
         }
     }
 
-    fn parse_struct_def(&mut self) -> Result<Option<StructDef>> {
+    fn parse_schema(&mut self) -> Result<Option<Schema>> {
         if !bool::read_from(&mut self.reader)? {
             return Ok(None); // EOF
         }
@@ -110,10 +92,10 @@ impl<R: Read> Parser<R> {
             })
         }
 
-        Ok(Some(StructDef { id, name, fields }))
+        Ok(Some(Schema { id, name, fields }))
     }
 
-    fn parse_data_block(&mut self, struct_id: u32) -> Result<Block> {
+    fn parse_struct(&mut self, struct_id: u32) -> Result<Block> {
         let struct_def = self
             .struct_defs
             .get(&struct_id)
@@ -131,7 +113,7 @@ impl<R: Read> Parser<R> {
             data.insert(field.name.clone(), value);
         }
 
-        Ok(Block::Data(DataBlock {
+        Ok(Block::Struct(Struct {
             id: block_id,
             struct_name: struct_def.name.clone(),
             fields: data,

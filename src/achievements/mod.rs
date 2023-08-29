@@ -3,15 +3,14 @@ use rusqlite::Connection;
 use std::{collections::BTreeMap, io::Read};
 
 use crate::{
-    achievements::sii_text::{Lexer, Parser},
-    data_get,
-    sii::{parser::DataBlock, value::ID}, scs::Archive,
+    sii::text::{Lexer, Parser},
+    get_value_as,
+    sii::value::{ID, Struct}, scs::Archive,
 };
 
 use self::locale::LocaleDB;
 
 mod locale;
-mod sii_text;
 
 const ACHIEVEMENTS_SII_HASH: u64 = 0x5C075DC23D8D177;
 
@@ -129,10 +128,10 @@ struct AchievementEachCompany {
     required_cargo: Option<Vec<String>>,
 }
 
-impl TryFrom<DataBlock> for AchievementEachCompany {
+impl TryFrom<Struct> for AchievementEachCompany {
     type Error = anyhow::Error;
 
-    fn try_from(value: DataBlock) -> Result<Self> {
+    fn try_from(value: Struct) -> Result<Self> {
         if value.struct_name != "achievement_each_company_data" {
             bail!(
                 "cannot decode AchievementEachCompany from {}",
@@ -149,14 +148,14 @@ impl TryFrom<DataBlock> for AchievementEachCompany {
         };
 
         let required_cargo = if value.fields.contains_key("cargos") {
-            Some(data_get!(value, "cargos", StringArray)?.clone())
+            Some(get_value_as!(value, "cargos", StringArray)?.clone())
         } else {
             None
         };
 
-        let achievement_name = data_get!(value, "achievement_name", String)?.to_owned();
+        let achievement_name = get_value_as!(value, "achievement_name", String)?.to_owned();
         let mut companies = BTreeMap::new();
-        let target_arr = data_get!(value, match_field, StringArray)?;
+        let target_arr = get_value_as!(value, match_field, StringArray)?;
         for t in target_arr {
             let target_id = ID::try_from(t.as_str())?;
             if !companies.contains_key(&target_id) {
@@ -226,16 +225,16 @@ struct AchievementVisitCity {
     cities: Vec<String>,
 }
 
-impl TryFrom<DataBlock> for AchievementVisitCity {
+impl TryFrom<Struct> for AchievementVisitCity {
     type Error = anyhow::Error;
 
-    fn try_from(value: DataBlock) -> Result<Self> {
-        if data_get!(value, "event_name", String)? != "city_visited" {
+    fn try_from(value: Struct) -> Result<Self> {
+        if get_value_as!(value, "event_name", String)? != "city_visited" {
             bail!("expected achievement_visit_city_data to have event_name = city_visited");
         }
 
-        let achievement_name = data_get!(value, "achievement_name", String)?.clone();
-        let cities = data_get!(value, "cities", StringArray)?.clone();
+        let achievement_name = get_value_as!(value, "achievement_name", String)?.clone();
+        let cities = get_value_as!(value, "cities", StringArray)?.clone();
         Ok(Self {
             achievement_name,
             cities,
@@ -283,10 +282,10 @@ struct AchievementEachCargo {
     cargos: Vec<String>,
 }
 
-impl TryFrom<DataBlock> for AchievementEachCargo {
+impl TryFrom<Struct> for AchievementEachCargo {
     type Error = anyhow::Error;
 
-    fn try_from(value: DataBlock) -> Result<Self> {
+    fn try_from(value: Struct) -> Result<Self> {
         if value.struct_name != "achievement_each_cargo_data" {
             bail!(
                 "cannot decode AchievementEachCargo from {}",
@@ -294,8 +293,8 @@ impl TryFrom<DataBlock> for AchievementEachCargo {
             );
         }
 
-        let cargos = data_get!(value, "cargos", StringArray)?.clone();
-        let achievement_name = data_get!(value, "achievement_name", String)?.to_owned();
+        let cargos = get_value_as!(value, "cargos", StringArray)?.clone();
+        let achievement_name = get_value_as!(value, "achievement_name", String)?.to_owned();
 
         Ok(Self {
             achievement_name,

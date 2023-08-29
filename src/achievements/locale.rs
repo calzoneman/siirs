@@ -1,9 +1,7 @@
 use anyhow::{anyhow, Result};
 use std::{collections::HashMap, io::Read};
 
-use crate::{data_get, scs::Archive, crypt::threenk};
-
-use super::sii_text::{Lexer, Parser};
+use crate::{get_value_as, scs::Archive, crypt::threenk, sii::text::{Lexer, Parser}};
 
 pub struct LocaleDB(HashMap<String, String>);
 
@@ -22,8 +20,8 @@ impl LocaleDB {
             .ok_or_else(|| anyhow!("missing localization_db struct"))??;
 
         let mut entries = HashMap::new();
-        let keys = data_get!(db_struct, "key", StringArray)?;
-        let values = data_get!(db_struct, "val", StringArray)?;
+        let keys = get_value_as!(db_struct, "key", StringArray)?;
+        let values = get_value_as!(db_struct, "val", StringArray)?;
         for (key, value) in keys.iter().zip(values.iter()) {
             entries.insert(key.clone(), value.clone());
         }

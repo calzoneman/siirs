@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use crate::{
-    data_get,
-    sii::{game::GameSave, parser::DataBlock},
+    get_value_as,
+    sii::{game::GameSave, value::Struct},
 };
 use anyhow::{anyhow, Result};
 
@@ -34,13 +34,13 @@ pub fn find_profitable_cities(save: &GameSave) -> Result<()> {
         if !city_to_jobs.contains_key(&city_id) {
             city_to_jobs.insert(city_id.clone(), Vec::new());
         }
-        let offer_ids = data_get!(company, "job_offer", IDArray)?;
+        let offer_ids = get_value_as!(company, "job_offer", IDArray)?;
 
         for offer_id in offer_ids {
             let offer = save
                 .get_block_by_id(offer_id)
                 .ok_or_else(|| anyhow!("could not locate job offer {offer_id:?}"))?;
-            let expiration = *data_get!(offer, "expiration_time", UInt32)?;
+            let expiration = *get_value_as!(offer, "expiration_time", UInt32)?;
             // There seem to be a bunch of placeholder job offers with expirations of -1
             if expiration != (-1i32 as u32) {
                 city_to_jobs.get_mut(&city_id).unwrap().push(offer);
@@ -73,8 +73,8 @@ pub fn find_profitable_cities(save: &GameSave) -> Result<()> {
     Ok(())
 }
 
-fn target_city(job: &DataBlock) -> Result<&str> {
-    let dest_company = data_get!(job, "target", String)?;
+fn target_city(job: &Struct) -> Result<&str> {
+    let dest_company = get_value_as!(job, "target", String)?;
     dest_company
         .split(".")
         .last()
@@ -83,8 +83,8 @@ fn target_city(job: &DataBlock) -> Result<&str> {
 
 fn has_return_job(
     origin: &String,
-    job: &DataBlock,
-    city_to_jobs: &HashMap<String, Vec<&DataBlock>>,
+    job: &Struct,
+    city_to_jobs: &HashMap<String, Vec<&Struct>>,
 ) -> Result<bool> {
     let dest_city = target_city(job)?;
 

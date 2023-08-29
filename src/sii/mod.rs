@@ -1,3 +1,4 @@
 pub mod game;
-pub mod parser;
+pub mod binary;
+pub mod text;
 pub mod value;
