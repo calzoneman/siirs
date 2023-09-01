@@ -1,11 +1,11 @@
 use anyhow::{bail, Result};
 use rusqlite::Connection;
-use std::{collections::BTreeMap, io::Read};
+use std::{collections::BTreeMap, path::PathBuf};
 
 use crate::{
-    sii::text::{Lexer, Parser},
+    sii::{self},
     get_value_as,
-    sii::value::{ID, Struct}, scs::Archive,
+    sii::value::{ID, Struct}, scs::Archive, sqlite,
 };
 
 use self::locale::LocaleDB;
@@ -14,41 +14,42 @@ mod locale;
 
 const ACHIEVEMENTS_SII_HASH: u64 = 0x5C075DC23D8D177;
 
-pub fn check_achievements(
-    conn: Connection,
-    core_scs_path: &str,
-    locale_scs_path: Option<&str>,
-) -> Result<()> {
-    let save_data = AchievementSaveData::new(conn)?;
-    let locale_db = if let Some(filename) = locale_scs_path {
-        LocaleDB::new_from_locale_scs(filename)?
-    } else {
-        LocaleDB::new_empty()
-    };
+pub struct AchievementStatus {
+    pub name: String,
+    pub requirements: Vec<Requirement>
+}
 
-    let mut core = Archive::load_from_path(core_scs_path)?;
+pub fn get_achievement_status(
+    save_path: &str,
+    game_path: &str
+) -> Result<Vec<AchievementStatus>> {
+    let save_parser = sii::binary::Parser::new_from_save(save_path)?;   
+    let mut conn = Connection::open(":memory:")?;
+    sqlite::copy_to_sqlite(save_parser, &mut conn)?;
+    let save_data = AchievementSaveData::new(conn)?;
+
+    let locale_scs_path = PathBuf::from(game_path).join("locale.scs");
+    let locale_db = LocaleDB::new_from_locale_scs(locale_scs_path.to_str().expect("illegal filename"))?;
+    let core_scs_path = PathBuf::from(game_path).join("core.scs");
+
+    let mut core = Archive::load_from_path(core_scs_path.to_str().expect("illegal filename"))?;
     let reader = core.open_entry(ACHIEVEMENTS_SII_HASH)?;
-    let lex = Lexer::new(reader.bytes().peekable());
-    let mut parser = Parser::new(lex)?;
+    let mut parser = sii::text::Parser::new_from_reader(reader)?;
+    let mut results = Vec::new();
 
     loop {
         match parser.next() {
-            Some(Ok(t)) if t.struct_name == "achievement_each_company_data" => {
-                let achievement = AchievementEachCompany::try_from(t)?;
-                let (name, req) = achievement.eval(&save_data, &locale_db)?;
-                print_results(name, req);
+            Some(Ok(t)) => {
+                let achievement: Box<dyn Achievement> = match t.struct_name.as_str() {
+                    "achievement_each_company_data" => Box::from(AchievementEachCompany::try_from(t)?),
+                    "achievement_visit_city_data" => Box::from(AchievementVisitCity::try_from(t)?),
+                    "achievement_each_cargo_data" => Box::from(AchievementEachCargo::try_from(t)?),
+                    _ => { continue; }
+                };
+
+                let (name, requirements) = achievement.eval(&save_data, &locale_db)?;
+                results.push(AchievementStatus { name, requirements })
             }
-            Some(Ok(t)) if t.struct_name == "achievement_visit_city_data" => {
-                let achievement = AchievementVisitCity::try_from(t)?;
-                let (name, req) = achievement.eval(&save_data, &locale_db)?;
-                print_results(name, req);
-            }
-            Some(Ok(t)) if t.struct_name == "achievement_each_cargo_data" => {
-                let achievement = AchievementEachCargo::try_from(t)?;
-                let (name, req) = achievement.eval(&save_data, &locale_db)?;
-                print_results(name, req);
-            }
-            Some(Ok(_)) => {}
             Some(Err(e)) => {
                 bail!(e)
             }
@@ -56,41 +57,20 @@ pub fn check_achievements(
         }
     }
 
-    Ok(())
-}
-
-fn print_results(achievement_name: String, requirements: Vec<Requirement>) {
-    print_boxed(&achievement_name);
-    for req in requirements {
-        let prefix = if req.status == RequirementStatus::Completed {
-            "\x1b[1;32m✓\x1b[1;30m "
-        } else {
-            "\x1b[0m  "
-        };
-
-        println!("{} {}: {}", prefix, req.progress_description, req.name);
-    }
-
-    println!("\x1b[0m")
-}
-
-fn print_boxed(s: &str) {
-    println!("╭─{}─╮", "─".repeat(s.len()));
-    println!("│ {} │", s);
-    println!("╰─{}─╯", "─".repeat(s.len()));
+    Ok(results)
 }
 
 #[derive(Debug, Eq, PartialEq)]
-enum RequirementStatus {
+pub enum RequirementStatus {
     NotStarted,
     Started,
     Completed,
 }
 
-struct Requirement {
-    name: String,
-    status: RequirementStatus,
-    progress_description: String,
+pub struct Requirement {
+    pub name: String,
+    pub status: RequirementStatus,
+    pub progress_description: String,
 }
 
 trait Achievement {

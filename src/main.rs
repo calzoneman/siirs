@@ -9,7 +9,6 @@ use sii::{
     binary::Parser,
 };
 
-mod achievements;
 mod prospective_cities;
 mod scs;
 mod sii;
@@ -30,19 +29,6 @@ fn main() -> Result<()> {
             let parser = Parser::new(zread)?;
             let mut conn = Connection::open(&args[3])?;
             sqlite::copy_to_sqlite(parser, &mut conn)?;
-        }
-        "check-achievements-v2" => {
-            let enc_file = File::open(&args[2])?;
-            let decrypted = Decryptor::new(enc_file).decrypt()?;
-            let zread = ZlibDecoder::new(decrypted.as_slice());
-            let parser = Parser::new(zread)?;
-            let mut conn = Connection::open(":memory:")?;
-            sqlite::copy_to_sqlite(parser, &mut conn)?;
-            achievements::check_achievements(
-                conn,
-                &args[3],
-                Some(&args[4]),
-            )?;
         }
         "decrypt-3nk" => {
             let mut enc_file = File::open(&args[2])?;

@@ -1,4 +1,5 @@
 use anyhow::{anyhow, bail, Result};
+use std::io::{Read, Bytes};
 use std::str::FromStr;
 use std::{
     collections::HashMap,
@@ -74,7 +75,7 @@ macro_rules! expect_char {
 }
 
 #[derive(Debug)]
-pub(crate) enum Token {
+pub enum Token {
     Identifier(String),
     QuotedString(String),
     // All numerics without decimals parsed as u64 for simplicity; this is good
@@ -89,12 +90,12 @@ pub(crate) enum Token {
     LeftRightBracket,
 }
 
-pub(crate) struct Lexer<I>(Peekable<I>)
+pub struct Lexer<I>(Peekable<I>)
 where
     I: Iterator<Item = std::io::Result<u8>>;
 
 impl<I: Iterator<Item = std::io::Result<u8>>> Lexer<I> {
-    pub(crate) fn new(iter: Peekable<I>) -> Self {
+    pub fn new(iter: Peekable<I>) -> Self {
         Self(iter)
     }
 }
@@ -265,7 +266,7 @@ macro_rules! match_token {
 /// A good-enough textual sii file parser -- good enough to can parse achievements.sii
 /// and the en_us base localization sii
 // TODO: make pub, make the new() handle creating a lexer from file
-pub(crate) struct Parser<L: Iterator<Item = Result<Token>>> {
+pub struct Parser<L: Iterator<Item = Result<Token>>> {
     lexer: Peekable<L>,
 }
 
@@ -374,6 +375,13 @@ impl<L: Iterator<Item = Result<Token>>> Iterator for Parser<L> {
                 None => Some(Err(e)),
             },
         }
+    }
+}
+
+impl<R: Read> Parser<Lexer<Bytes<R>>> {
+    pub fn new_from_reader(reader: R) -> Result<Parser<Lexer<Bytes<R>>>> {
+        let lexer = Lexer::new(reader.bytes().peekable());
+        Parser::new(lexer)
     }
 }
 

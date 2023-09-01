@@ -1,6 +1,9 @@
 use anyhow::{anyhow, bail, Result};
 use byteorder::{LittleEndian, ReadBytesExt};
-use std::{collections::HashMap, io::Read};
+use flate2::read::ZlibDecoder;
+use std::{collections::HashMap, io::Read, fs::File};
+
+use crate::crypt::sii::Decryptor;
 
 use super::value::{OrdinalStringTable, ReadFrom, Value, ID, Struct};
 
@@ -118,5 +121,30 @@ impl<R: Read> Parser<R> {
             struct_name: struct_def.name.clone(),
             fields: data,
         }))
+    }
+}
+
+impl Parser<ZlibDecoder<VecRead>> {
+    pub fn new_from_save(path: &str) -> Result<Self> {
+        let enc_file = File::open(path)?;
+        let decrypted = Decryptor::new(enc_file).decrypt()?;
+        let zread = ZlibDecoder::new(VecRead { v: decrypted, off: 0 });
+        Self::new(zread)
+    }
+}
+
+pub struct VecRead {
+    v: Vec<u8>,
+    off: usize
+}
+
+impl Read for VecRead {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        use std::cmp::{max, min};
+
+        let n = max(0, min(self.v.len() - self.off, buf.len()));
+        let res = (&self.v[self.off..]).read(&mut buf[..n])?;
+        self.off += res;
+        Ok(res)
     }
 }
