@@ -38,7 +38,7 @@ impl<R: Read> Parser<R> {
         }
 
         let version = reader.read_u32::<LittleEndian>()?;
-        if version != 3 {
+        if version != 2 && version != 3 {
             bail!("unsupported version: {version}")
         }
 
