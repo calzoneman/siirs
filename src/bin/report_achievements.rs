@@ -5,13 +5,15 @@ use siirs::achievements::{self, AchievementStatus, RequirementStatus};
 
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
-    if args.len() != 3 {
-        bail!("Usage: {} <path to game.sii> <path to game folder>", args[0]);
+    if args.len() != 3 && args.len() != 4 {
+        bail!("Usage: {} <path to game.sii> <path to game folder> [<achievement_id>]", args[0]);
     }
 
     let results = achievements::get_achievement_status(&args[1], &args[2])?;
     for status in results {
-        print_results(&status)
+        if args.len() == 3 || &args[3] == &status.name {
+            print_results(&status);
+        }
     }
 
     Ok(())
