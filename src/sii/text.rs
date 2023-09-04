@@ -387,27 +387,35 @@ impl<R: Read> Parser<Lexer<Bytes<R>>> {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs::File, io::Read};
+    use std::path::PathBuf;
 
-    use super::{Lexer, Parser};
+    use anyhow::Result;
 
-    // TODO: embed a subset of this file to test the parser instead of relying
-    // on local files to be there
+    use crate::{scs::Archive, sii::{self, value::ID}, get_value_as};
+
+    const ACHIEVEMENTS_SII_HASH: u64 = 0x5C075DC23D8D177;
+
     #[test]
-    fn test_parse_file() {
-        let f = File::open("5C075DC23D8D177-achievements.sii").unwrap();
-        let lex = Lexer(f.bytes().peekable());
-        let mut parser = Parser::new(lex).unwrap();
+    fn test_parse_achievements_sii() -> Result<()> {
+        let core_scs_path = PathBuf::from("test_symlinks/game_path").join("core.scs");
+        let mut core = Archive::load_from_path(core_scs_path.to_str().expect("illegal filename"))?;
+        let reader = core.open_entry(ACHIEVEMENTS_SII_HASH)?;
+        let mut parser = sii::text::Parser::new_from_reader(reader)?;
+
         loop {
             match parser.next() {
-                Some(Ok(t)) => {
-                    dbg!(t);
+                Some(Ok(t)) if t.id == ID::try_from(".achievement.it_shipyards")? => {
+                    let targets = get_value_as!(t, "targets", StringArray)?;
+                    assert_eq!(targets, &vec!["c_navale.ancona", "c_navale.messina"]);
                 }
+                Some(Ok(_)) => {}
                 Some(Err(e)) => {
                     panic!("{}", e);
                 }
                 None => break,
             }
         }
+
+        Ok(())
     }
 }
