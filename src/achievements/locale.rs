@@ -8,6 +8,7 @@ pub struct LocaleDB(HashMap<String, String>);
 impl LocaleDB {
     const EN_US_LOCAL_SII_HASH: u64 = 0x748A55BF49E4F39E; // locale/en_us/local.sii
 
+    #[allow(dead_code)]
     pub fn new_empty() -> Self {
         Self(HashMap::new())
     }
